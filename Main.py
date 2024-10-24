@@ -387,7 +387,7 @@ Bullets = []
 AttackEffects = []
 AttackTimings = []
 AttackCooldown = 300
-CurrentBoss = 2
+CurrentBoss = 0
 PantheonID = 0
 CutsceneID = 0
 GrazingAnimation = 0
@@ -512,4 +512,3 @@ while Run:
     pygame.display.update()
     Clock.tick(60 * Speedhack)
 pygame.quit()
-ччччччччччччч
