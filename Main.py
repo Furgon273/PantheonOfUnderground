@@ -5,7 +5,7 @@ import math as mat
 
 class Bullet:
     def __init__(self, StartX, StartY, BulletType, BulletData, Image, ImageSizeX, ImageSizeY, HitboxSizeX, HitboxSizeY,
-                 Damage, InvFrames, GrazingPotential, DamageType='White'):
+                 Damage, InvFrames, GrazingPotential, DamageType='White', Piercing=False):
         self.PositionX = StartX
         self.PositionY = StartY
         self.Type = BulletType
@@ -19,6 +19,7 @@ class Bullet:
         self.InvFrames = InvFrames
         self.GrazingPotential = GrazingPotential
         self.DamageType = DamageType
+        self.Piercing = Piercing
         if self.Type == 'Base':
             self.Direction = BulletData[0]
             self.Speed = BulletData[1]
@@ -44,17 +45,32 @@ class Bullet:
             self.Yv = BulletData[1]
             self.Gravity = BulletData[2]
             self.SpawnOnGround = BulletData[3]
+        if self.Type == 'Shooter':
+            self.Timer = BulletData[0]
+            self.Shot = BulletData[1]
+            self.IsAutoDirective = BulletData[2]
+            self.Repeats = BulletData[3]
+        if self.Type == 'Seeking':
+            self.Speed = BulletData[0]
+            self.MaxRotation = BulletData[1]
+            self.Duration = BulletData[2]
+            self.RotateImage = BulletData[3]
+            self.Direction = 'ъ'
+            self.OriginalImage = Image
 
     def CheckCollision(self):
         global Lives, InvFrames, TP, GrazingAnimation
         if self.DamageType == 'Blue' and not PlayerIsMoving:
+            return
+        if self.DamageType == 'Orange' and PlayerIsMoving:
             return
         if pygame.Rect(self.PositionX - self.HitboxSizeX / 2, self.PositionY - self.HitboxSizeY / 2, self.HitboxSizeX,
                        self.HitboxSizeY).colliderect(
             pygame.Rect(PlayerX - 10, PlayerY - 10, 20, 20)) and InvFrames == 0:
             Lives -= self.Damage
             InvFrames = self.InvFrames
-            self.NeedsDelete = True
+            if not self.Piercing:
+                self.NeedsDelete = True
         if pygame.Rect(self.PositionX - self.HitboxSizeX / 2, self.PositionY - self.HitboxSizeY / 2, self.HitboxSizeX,
                        self.HitboxSizeY).colliderect(
             pygame.Rect(PlayerX - 20, PlayerY - 20, 40, 40)) and InvFrames == 0:
@@ -122,6 +138,32 @@ class Bullet:
                     SpawnedBullet.PositionY = self.PositionY
                     Bullets.append(SpawnedBullet)
                 self.NeedsDelete = True
+        if self.Type == 'Shooter':
+            self.Timer -= 1
+            if self.Timer == 0:
+                if self.IsAutoDirective:
+                    self.Shot.Direction = AimToPlayer(self.PositionX, self.PositionY)
+                self.Shot.PositionX = self.PositionX
+                self.Shot.PositionY = self.PositionY
+                Bullets.append(self.Shot)
+                self.Repeats -= 1
+                if self.Repeats == 0:
+                    self.NeedsDelete = True
+        if self.Type == 'Seeking':
+            if self.Duration > 0:
+                if self.Direction == 'ъ':
+                    self.Direction = AimToPlayer(self.PositionX, self.PositionY)
+                Turn = (AimToPlayer(self.PositionX, self.PositionY) - self.Direction) % (mat.pi * 2)
+                if abs(Turn) > self.MaxRotation:
+                    if Turn > mat.pi:
+                        Turn = -self.MaxRotation
+                    else:
+                        Turn = self.MaxRotation
+                self.Direction += Turn
+                self.Image = RotateImage(self.OriginalImage, self.Direction)
+                self.Duration -= 1
+            self.PositionX -= self.Speed * mat.sin(self.Direction)
+            self.PositionY -= self.Speed * mat.cos(self.Direction)
         self.CheckCollision()
         self.Draw(Window)
         if not (-100 < self.PositionX < 700 and -100 < self.PositionY < 700):
@@ -258,10 +300,6 @@ class Napstablook:
         pygame.draw.rect(DrawWindow, 'red', pygame.Rect(150, 270, 300, 20))
         pygame.draw.rect(DrawWindow, 'green', pygame.Rect(150, 270, self.BossHP / 4, 20))
 
-    def CheckDeath(self):
-        if self.BossHP <= 0:
-            self.Phase = -1
-
     def NextFrame(self):
         if abs(self.Position) >= 50:
             self.Position += 1
@@ -278,6 +316,10 @@ class Napstablook:
 
     def TakeDamage(self, DamageTaken):
         self.BossHP -= DamageTaken
+
+    def CheckDeath(self):
+        if self.BossHP <= 0:
+            self.Phase = -1
 
 
 class YellowMercenaries:
@@ -355,7 +397,7 @@ class YellowMercenaries:
         RorrimImage = GetImage('Images/Rorrim.png', 128, 150)
         CrispyScrollImage = GetImage('Images/CrispyScroll.png', 120, 90)
         CrispyScrollImage = pygame.transform.scale(CrispyScrollImage, (120, 90))
-        PlayerTargetImage = GetImage('Images\Aim.png', 54, 36)
+        PlayerTargetImage = GetImage('Images/Aim.png', 54, 36)
         if self.FlierHP > 0:
             DrawWindow.blit(FlierImage, pygame.Rect(170, 170, 60, 64))
             pygame.draw.rect(DrawWindow, 'red', pygame.Rect(170, 270, 60, 20))
@@ -397,7 +439,7 @@ class Doggo:
         self.BossHP = 700
         self.Cooldown = 21
         self.Phase = StartPhase
-        self.Theme = "OST/WerewireArmyTheme.mp3"
+        self.Theme = "OST/DoggoTheme.mp3"
         self.Direction = 1
 
     def Attack(self):
@@ -439,6 +481,194 @@ class Doggo:
             BoxSizeX = 100
 
 
+class Clover:
+    def __init__(self, StartPhase=0):
+        self.BossHP = 1000
+        self.Cooldown = 21
+        self.Phase = StartPhase
+        self.Theme = "OST/CloverTheme.mp3"
+        self.TailDirection = 0
+        self.TailPosition = 300
+
+    def Attack(self):
+        pass
+
+    def Draw(self, DrawWindow):
+        pass
+
+    def NextFrame(self):
+        self.Phase = -1
+
+    def TakeDamage(self, DamageTaken):
+        self.BossHP -= DamageTaken
+
+    def CheckDeath(self):
+        if self.BossHP <= 0:
+            self.Phase = -1
+
+
+class MadDummy:
+    def __init__(self, StartPhase=0):
+        self.BossHP = 0
+        self.Time = 0
+        self.Cooldown = 20
+        self.BossHP = 4000
+        self.CurrentAttacks = []
+        self.Phase = StartPhase
+        self.Theme = "OST/MadDummyTheme1.mp3"
+
+    def Attack(self):
+        if self.Phase == 0 and self.BossHP > 2000:
+            if len(self.CurrentAttacks) == 0:
+                if self.Cooldown > 0:
+                    self.Cooldown -= 1
+                else:
+                    self.CurrentAttacks = []
+                    for CurrentAttackNumber in range(RNG.randint(7, 11)):
+                        self.CurrentAttacks.append(RNG.randint((self.BossHP + 50000) // 2000, (self.BossHP + 70000) // 2000))
+                        self.Cooldown = 100
+            elif len(self.CurrentAttacks) == 1:
+                self.CurrentAttacks[0] -= 1
+                if self.CurrentAttacks[0] == 0:
+                    del self.CurrentAttacks[0]
+                    for DummyNumber in range(0, RNG.randint(3, 10)):
+                        DummyBullet = Bullet(-1, -1, 'Base', [-1, 3], GetImage('Images/DummyMagicBullet' + str(RNG.randint(1, 3)) + '.png', 25, 25), 20, 20, 10, 10, 50, 90, 0.5)
+                        Bullets.append(Bullet(RNG.randint(220, 380), 520, 'Shooter', [50, DummyBullet, True, 1], GetImage('Images/DummyMagicWarning.png', 25, 25), 25, 25, 15, 15, 50, 90, 0.2))
+            else:
+                self.CurrentAttacks[0] -= 1
+                if self.CurrentAttacks[0] == 0:
+                    del self.CurrentAttacks[0]
+                    CurrentAttackType = RNG.randint(1, 60)
+                    if CurrentAttackType < 11:
+                        for DummyNumber in range(0, RNG.randint(3, 10)):
+                            DummyBullet = Bullet(-1, -1, 'Base', [-1, 3], GetImage('Images/DummyMagicBullet' + str(RNG.randint(1, 3)) + '.png', 25, 25), 20, 20, 10, 10, 50, 90, 0.5)
+                            Bullets.append(Bullet(RNG.randint(220, 380), 280, 'Shooter', [50, DummyBullet, True, 1], RotateImage(GetImage('Images/DummyMagicWarning.png', 25, 25), mat.pi), 25, 25, 15, 15, 50, 90, 0.2))
+                    elif CurrentAttackType < 21:
+                        Gap = RNG.randint(1, 5)
+                        for DummyNumber in range(0, 8):
+                            if DummyNumber not in [Gap, Gap + 1]:
+                                DummyBullet = Bullet(-1, -1, 'Base', [mat.pi, 3], GetImage('Images/DummyBullet.png', 25, 25), 25, 25, 15, 15, 50, 90, 1)
+                                Bullets.append(Bullet(212.5 + 25 * DummyNumber, 280, 'Shooter', [35, DummyBullet, False, 1], GetImage('Images/DummyBullet.png', 25, 25), 25, 25, 15, 15, 50, 90, 0.2))
+                    elif CurrentAttackType < 31:
+                        for DummyNumber in range(0, RNG.randint(3, 10)):
+                            DummyBullet = Bullet(-1, -1, 'Base', [-1, 3], GetImage('Images/DummyMagicBullet' + str(RNG.randint(1, 3)) + '.png', 25, 25), 20, 20, 10, 10, 50, 90, 0.5)
+                            Bullets.append(Bullet(420, RNG.randint(320, 480), 'Shooter', [50, DummyBullet, True, 1], RotateImage(GetImage('Images/DummyMagicWarning.png', 25, 25), mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+                    elif CurrentAttackType < 41:
+                        Gap = RNG.randint(1, 5)
+                        for DummyNumber in range(0, 8):
+                            if DummyNumber not in [Gap, Gap + 1]:
+                                DummyBullet = Bullet(-1, -1, 'Base', [mat.pi / 2, 3], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), -mat.pi / 2), 25, 25, 15, 15, 50, 90, 1)
+                                Bullets.append(Bullet(420, 312.5 + 25 * DummyNumber, 'Shooter', [35, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), -mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+                    elif CurrentAttackType < 51:
+                        for DummyNumber in range(0, RNG.randint(3, 10)):
+                            DummyBullet = Bullet(-1, -1, 'Base', [-1, 3], GetImage('Images/DummyMagicBullet' + str(RNG.randint(1, 3)) + '.png', 25, 25), 20, 20, 10, 10, 50, 90, 0.5)
+                            Bullets.append(Bullet(180, RNG.randint(320, 480), 'Shooter', [50, DummyBullet, True, 1], RotateImage(GetImage('Images/DummyMagicWarning.png', 25, 25), -mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+                    else:
+                        Gap = RNG.randint(1, 5)
+                        for DummyNumber in range(0, 8):
+                            if DummyNumber not in [Gap, Gap + 1]:
+                                DummyBullet = Bullet(-1, -1, 'Base', [mat.pi * 3 / 2, 3], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), mat.pi / 2), 25, 25, 15, 15, 50, 90, 1)
+                                Bullets.append(Bullet(180, 312.5 + 25 * DummyNumber, 'Shooter', [35, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+        elif self.Phase == 0:
+            self.Cooldown -= 1
+            if self.Cooldown == 0:
+                self.Cooldown = 50
+                if self.CurrentAttacks in [0, []]:
+                    self.CurrentAttacks = RNG.randint(0, 5) * 2 + 1
+                self.CurrentAttacks -= 1
+                if self.CurrentAttacks > 0:
+                    if self.CurrentAttacks % 2 == 1:
+                        Gap = RNG.randint(1, 5)
+                        for DummyNumber in range(0, 8):
+                            if DummyNumber not in [Gap, Gap + 1]:
+                                DummyBullet = Bullet(-1, -1, 'Base', [mat.pi / 2, 3], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), -mat.pi / 2), 25, 25, 15, 15, 50, 90, 1)
+                                Bullets.append(Bullet(420, 312.5 + 25 * DummyNumber, 'Shooter', [35, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), -mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+                    else:
+                        Gap = RNG.randint(1, 5)
+                        for DummyNumber in range(0, 8):
+                            if DummyNumber not in [Gap, Gap + 1]:
+                                DummyBullet = Bullet(-1, -1, 'Base', [mat.pi * 3 / 2, 3], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), mat.pi / 2), 25, 25, 15, 15, 50, 90, 1)
+                                Bullets.append(Bullet(180, 312.5 + 25 * DummyNumber, 'Shooter', [35, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyBullet.png', 25, 25), mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+                        DummyBullet = Bullet(-1, -1, 'Seeking', [2, 0.05, 250, True], RotateImage(GetImage('Images/DummyRocket.png', 30, 30), mat.pi / 2), 30, 30, 10, 10, 70, 90, 1)
+                        if RNG.randint(1, 100) < 51:
+                            Bullets.append(Bullet(RNG.randint(220, 380), 520, 'Shooter', [60, DummyBullet, False, 1], GetImage('Images/DummyRobot.png', 25, 25), 25, 25, 15, 15, 50, 90, 0.2))
+                        else:
+                            Bullets.append(Bullet(RNG.randint(220, 380), 280, 'Shooter', [60, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyRobot.png', 25, 25), mat.pi), 25, 25, 15, 15, 50, 90, 0.2))
+                else:
+                    self.Cooldown += 175
+                    self.Gap = RNG.randint(0, 3)
+                    for DummyRocketNumber in range(0, 7):
+                        if self.Gap != 0:
+                            DummyBullet = Bullet(-1, -1, 'Seeking', [1.6, 0.05, 200, True], RotateImage(GetImage('Images/DummyRocket.png', 22, 22), mat.pi / 2), 22, 22, 2, 2, 10, 0, 0.25)
+                            Bullets.append(Bullet(210 + 30 * DummyRocketNumber, 520, 'Shooter', [60, DummyBullet, False, 1], GetImage('Images/DummyRobot.png', 25, 25), 25, 25, 15, 15, 50, 90, 0.2))
+                        if self.Gap != 1:
+                            DummyBullet = Bullet(-1, -1, 'Seeking', [1.6, 0.05, 200, True], RotateImage(GetImage('Images/DummyRocket.png', 22, 22), mat.pi / 2), 22, 22, 2, 2, 10, 0, 0.25)
+                            Bullets.append(Bullet(210 + 30 * DummyRocketNumber, 280, 'Shooter', [60, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyRobot.png', 25, 25), mat.pi), 25, 25, 15, 15, 50, 90, 0.2))
+                        if self.Gap != 2:
+                            DummyBullet = Bullet(-1, -1, 'Seeking', [1.6, 0.05, 200, True], RotateImage(GetImage('Images/DummyRocket.png', 22, 22), mat.pi / 2), 22, 22, 2, 2, 10, 0, 0.25)
+                            Bullets.append(Bullet(420, 310 + 30 * DummyRocketNumber, 'Shooter', [60, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyRobot.png', 25, 25), mat.pi / 2), 25, 25, 15, 15, 50, 90, 0.2))
+                        if self.Gap != 3:
+                            DummyBullet = Bullet(-1, -1, 'Seeking', [1.6, 0.05, 200, True], RotateImage(GetImage('Images/DummyRocket.png', 22, 22), mat.pi / 2), 22, 22, 2, 2, 10, 0, 0.25)
+                            Bullets.append(Bullet(180, 310 + 30 * DummyRocketNumber, 'Shooter', [60, DummyBullet, False, 1], RotateImage(GetImage('Images/DummyRobot.png', 25, 25), mat.pi * 3 / 2), 25, 25, 15, 15, 50, 90, 0.2))
+
+    def Draw(self, DrawWindow):
+        MadDummyImage = GetImage('Images/MadDummy.png', 100, 120)
+        if self.Phase == 0 and self.BossHP > 2000:
+            self.Time += 0.01
+            DrawWindow.blit(MadDummyImage, pygame.Rect(250 + mat.sin(self.Time) * (20000 - self.BossHP) / 100, 160, 100, 120))
+            pygame.draw.rect(DrawWindow, 'red', pygame.Rect(200 + mat.sin(self.Time) * (20000 - self.BossHP) / 100, 120, 200, 20))
+            pygame.draw.rect(DrawWindow, 'green', pygame.Rect(200 + mat.sin(self.Time) * (20000 - self.BossHP) / 100, 120, self.BossHP / 100, 20))
+            for MagicBullet in Bullets:
+                if abs(300 + mat.sin(self.Time) * (20000 - self.BossHP) / 100 - MagicBullet.PositionX) < 40 and abs(MagicBullet.PositionY - 220) < 50:
+                    MagicBullet.NeedsDelete = True
+                    self.BossHP -= 100
+        elif self.Phase == 0:
+            DrawWindow.blit(MadDummyImage, pygame.Rect(250, 160, 100, 120))
+            pygame.draw.rect(DrawWindow, 'red', pygame.Rect(200, 120, 200, 20))
+            pygame.draw.rect(DrawWindow, 'green', pygame.Rect(200, 120, self.BossHP / 100, 20))
+
+
+    def NextFrame(self):
+        self.Draw(Window)
+        self.Attack()
+        self.CheckDeath()
+
+    def TakeDamage(self, DamageTaken):
+        self.BossHP -= DamageTaken
+
+    def CheckDeath(self):
+        if self.BossHP <= 0:
+            self.Phase += 1
+            if self.Phase == 3:
+                self.Phase = -1
+
+
+class Example:
+    def __init__(self, StartPhase=0):
+        self.BossHP = 0
+        self.Cooldown = 0
+        self.Phase = StartPhase
+        self.Theme = "OST/BossNameTheme.mp3"
+
+    def Attack(self):
+        pass
+
+    def Draw(self, DrawWindow):
+        pass
+
+    def NextFrame(self):
+        self.Draw(Window)
+        self.Attack()
+        self.CheckDeath()
+
+    def TakeDamage(self, DamageTaken):
+        self.BossHP -= DamageTaken
+
+    def CheckDeath(self):
+        if self.BossHP <= 0:
+            self.Phase = -1
+
+
 def AimToPlayer(PositionX, PositionY):
     if PositionY <= PlayerY:
         return mat.atan((PositionX - PlayerX + 0.0001) / (PositionY - PlayerY + 0.0001)) + mat.pi
@@ -464,18 +694,18 @@ pygame.init()
 n = 0
 Run = True
 Lives = 1000
-DefaultSpeedhack = 1
+DefaultSpeedhack = 0.5
 Speedhack = DefaultSpeedhack
 Font = pygame.font.SysFont('Pixel', 35)
 Window = pygame.display.set_mode((600, 600))
 pygame.display.set_caption('')
 Clock = pygame.time.Clock()
-Pantheons = [[WerewireArmy(), Napstablook(), YellowMercenaries(), Doggo()]]
+Pantheons = [[WerewireArmy(), Napstablook(), YellowMercenaries(), Doggo(), Clover(), MadDummy()]]
 Bullets = []
 AttackEffects = []
 AttackTimings = []
 AttackCooldown = 300
-CurrentBoss = 0
+CurrentBoss = 5
 PantheonID = 0
 CutsceneID = 0
 GrazingAnimation = 0
@@ -489,6 +719,7 @@ PlayerY = BoxCenterY
 BoxSizeX = 100
 BoxSizeY = 100
 InvFrames = 0
+ChangeMusic = False
 PlayerNormalImage = GetImage('Images/PlayerNormal.png', 20, 20)
 ChargedAttackImage = GetImage('Images/ChargedAttack.png', 20, 20)
 GrazeboxImage = GetImage('Images/Grazebox.png', 40, 40)
@@ -498,8 +729,11 @@ pygame.mixer.music.play(-1)
 while Run:
     if Pantheons[PantheonID][CurrentBoss].Phase == -1:
         CurrentBoss += 1
+        ChangeMusic = True
+    if ChangeMusic:
         pygame.mixer.music.load(Pantheons[PantheonID][CurrentBoss].Theme)
         pygame.mixer.music.play(-1)
+        ChangeMusic = False
     PlayerIsMoving = False
     n += 1
     GrazingAnimation -= 1
@@ -573,7 +807,7 @@ while Run:
         del Bullets[i]
     Window.fill((0, 0, 0))
     if CurrentBoss == 'Cutscene':
-        pass  # TODO
+        pass  #TODO
     else:
         Pantheons[PantheonID][CurrentBoss].NextFrame()
     if GrazingAnimation > 0:
